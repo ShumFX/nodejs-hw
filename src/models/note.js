@@ -1,5 +1,4 @@
-import { Schema } from 'mongoose';
-import { model } from 'mongoose';
+import { Schema, model } from 'mongoose';
 
 const noteSchema = new Schema(
   {
@@ -14,7 +13,7 @@ const noteSchema = new Schema(
     },
     tag: {
       type: String,
-      required: true,
+      required: false, // Змінено на false, бо є default
       enum: ['Work', 'Personal', 'Meeting', 'Shopping', 'Ideas', 'Travel', 'Finance', 'Health', 'Important', 'Todo'],
       default: 'Todo',
     }
