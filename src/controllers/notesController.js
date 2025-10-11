@@ -5,10 +5,6 @@ export const getAllNotes = async (req, res) => {
   const { page = 1, perPage = 10, tag, search } = req.query;
   const skip = (page - 1) * perPage;
 
-  function escapeRegex(string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
-
   // Базовий запит з userId
   let notesQuery = Note.find().where('userId').equals(req.user._id);
   let countQuery = Note.find().where('userId').equals(req.user._id);
@@ -19,20 +15,11 @@ export const getAllNotes = async (req, res) => {
     countQuery = countQuery.where('tag').equals(tag);
   }
 
-  // Пошук за title або content
+  // Повнотекстовий пошук за title та content
   if (search && search.trim() !== "") {
-    const safeSearch = escapeRegex(search.trim());
-    const regex = new RegExp(safeSearch, "i");
-    
-    notesQuery = notesQuery.or([
-      { title: regex },
-      { content: regex }
-    ]);
-    
-    countQuery = countQuery.or([
-      { title: regex },
-      { content: regex }
-    ]);
+    const searchText = search.trim();
+    notesQuery = notesQuery.$text({ $search: searchText });
+    countQuery = countQuery.$text({ $search: searchText });
   }
 
   // Виконання запитів
@@ -88,7 +75,7 @@ export const deleteNote = async (req, res, next) => {
     return;
   }
 
-  res.status(200).send(note);
+  res.status(200).json(note);
 };
 
 export const updateNote = async (req, res, next) => {
