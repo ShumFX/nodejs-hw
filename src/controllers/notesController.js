@@ -2,40 +2,40 @@ import createHttpError from 'http-errors';
 import { Note } from '../models/note.js';
 
 export const getAllNotes = async (req, res) => {
+
   const { page = 1, perPage = 10, tag, search } = req.query;
+
   const skip = (page - 1) * perPage;
 
-  // Базовий запит з userId
-  let notesQuery = Note.find().where('userId').equals(req.user._id);
-  let countQuery = Note.find().where('userId').equals(req.user._id);
-
-  // Фільтрація за tag
-  if (tag) {
-    notesQuery = notesQuery.where('tag').equals(tag);
-    countQuery = countQuery.where('tag').equals(tag);
+  function escapeRegex(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
-  // Повнотекстовий пошук за title та content
+  const filter = {userId: req.user._id};
+
   if (search && search.trim() !== "") {
-    const searchText = search.trim();
-    notesQuery = notesQuery.$text({ $search: searchText });
-    countQuery = countQuery.$text({ $search: searchText });
+    const safeSearch = escapeRegex(search.trim());
+    const regex = new RegExp(safeSearch, "i");
+    filter.$or = [{ title: regex }, { content: regex }];
   }
 
-  // Виконання запитів
+  if (tag) {
+    filter.tag = tag;
+  }
+
   const [totalNotes, notes] = await Promise.all([
-    countQuery.countDocuments(),
-    notesQuery.skip(skip).limit(Number(perPage)).sort({ createdAt: -1 })
+    Note.countDocuments(filter),
+    Note.find(filter).skip(skip).limit(Number(perPage))
   ]);
 
   const totalPages = Math.ceil(totalNotes / perPage);
 
-  res.status(200).json({
-    page: Number(page),
-    perPage: Number(perPage),
-    totalNotes,
-    totalPages,
-    notes,
+    res.status(200).json({
+      page,
+      perPage,
+      totalNotes,
+      totalPages,
+      notes,
   });
 };
 
@@ -75,7 +75,7 @@ export const deleteNote = async (req, res, next) => {
     return;
   }
 
-  res.status(200).json(note);
+  res.status(200).send(note);
 };
 
 export const updateNote = async (req, res, next) => {
