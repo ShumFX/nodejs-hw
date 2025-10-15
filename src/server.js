@@ -17,7 +17,7 @@ import authRoutes from './routes/authRoutes.js';
 
 
 const app = express();
-const PORT = process.env.PORT ?? 3030;
+const PORT = process.env.PORT ?? 3000;
 
 app.use(logger);
 
@@ -30,10 +30,6 @@ app.use(cookieParser());
 app.use(authRoutes);
 app.use(notesRoutes);
 
-
-app.get('/test-error', (req, res) => {
-  throw new Error('Simulated server error');
-});
 
 app.use(notFoundHandler);
 
