@@ -10,8 +10,6 @@ const userSchema = new Schema(
       required: false, 
       default: 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg' 
     },
-    resetPasswordToken: { type: String, required: false },
-    resetPasswordExpires: { type: Date, required: false },
   },
   { timestamps: true, versionKey: false },
 );
@@ -26,8 +24,6 @@ userSchema.pre('save', function (next) {
 userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;
-  delete obj.resetPasswordToken;
-  delete obj.resetPasswordExpires;
   return obj;
 };
 

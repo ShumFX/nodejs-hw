@@ -1,11 +1,14 @@
 import bcrypt from "bcrypt";
 import createHttpError from 'http-errors';
+import jwt from 'jsonwebtoken';
 import { User } from '../models/user.js';
 // session imports
 import { createSession, setSessionCookies } from '../services/auth.js';
 import { Session } from "../models/session.js";
-import { sendResetPasswordEmail } from '../services/email.js';
-import crypto from 'crypto';
+import { sendEmail } from '../utils/sendMail.js';
+import handlebars from 'handlebars';
+import fs from 'fs/promises';
+import path from 'path';
 
 // registration
 
@@ -105,24 +108,50 @@ export const requestResetEmail = async (req, res, next) => {
   const { email } = req.body;
 
   const user = await User.findOne({ email });
+  
+  // Завжди повертаємо 200, навіть якщо користувача не існує
+  // Це запобігає enumeration атакам
   if (!user) {
-    return next(createHttpError(404, 'User not found'));
+    res.status(200).json({
+      message: 'If the email exists, a reset link has been sent',
+    });
+    return;
   }
 
-  // Генеруємо токен для скидання пароля
-  const resetToken = crypto.randomBytes(32).toString('hex');
-  const resetTokenExpiry = Date.now() + 3600000; // 1 година
+  // Генеруємо JWT токен з ID та email користувача
+  const resetToken = jwt.sign(
+    { 
+      id: user._id,
+      email: user.email 
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: '15m' } // 15 хвилин
+  );
 
-  // Зберігаємо токен у користувача
-  user.resetPasswordToken = resetToken;
-  user.resetPasswordExpires = resetTokenExpiry;
-  await user.save();
+  // Читаємо HTML шаблон
+  const templatePath = path.join(process.cwd(), 'src', 'templates', 'reset-password-email.html');
+  const templateSource = await fs.readFile(templatePath, 'utf-8');
 
-  // Відправляємо email з токеном
-  await sendResetPasswordEmail(email, resetToken);
+  // Компілюємо шаблон з handlebars
+  const template = handlebars.compile(templateSource);
+  
+  const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+  
+  const html = template({
+    name: user.username || user.email,
+    link: resetUrl,
+  });
+
+  // Відправляємо email
+  await sendEmail({
+    from: process.env.SMTP_FROM,
+    to: email,
+    subject: 'Password Reset Request',
+    html: html,
+  });
 
   res.status(200).json({
-    message: 'Reset password email has been sent',
+    message: 'If the email exists, a reset link has been sent',
   });
 };
 
@@ -130,26 +159,35 @@ export const requestResetEmail = async (req, res, next) => {
 export const resetPassword = async (req, res, next) => {
   const { token, password } = req.body;
 
-  // Шукаємо користувача з валідним токеном
-  const user = await User.findOne({
-    resetPasswordToken: token,
-    resetPasswordExpires: { $gt: Date.now() },
-  });
+  try {
+    // Верифікуємо JWT токен
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-  if (!user) {
-    return next(createHttpError(401, 'Token is invalid or has expired'));
+    // Отримуємо ID та email з payload токена
+    const { id, email } = decoded;
+
+    // Знаходимо користувача за ID та email
+    const user = await User.findOne({ _id: id, email });
+
+    if (!user) {
+      return next(createHttpError(401, 'Token is invalid or has expired'));
+    }
+
+    // Хешуємо новий пароль
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Оновлюємо пароль
+    user.password = hashedPassword;
+    await user.save();
+
+    res.status(200).json({
+      message: 'Password has been reset successfully',
+    });
+  } catch (error) {
+    // Якщо токен невалідний або прострочений
+    if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
+      return next(createHttpError(401, 'Token is invalid or has expired'));
+    }
+    throw error;
   }
-
-  // Хешуємо новий пароль
-  const hashedPassword = await bcrypt.hash(password, 10);
-
-  // Оновлюємо пароль та видаляємо токен
-  user.password = hashedPassword;
-  user.resetPasswordToken = undefined;
-  user.resetPasswordExpires = undefined;
-  await user.save();
-
-  res.status(200).json({
-    message: 'Password has been reset successfully',
-  });
 };
